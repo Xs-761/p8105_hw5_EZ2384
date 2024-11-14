@@ -46,7 +46,7 @@ now simulate 5000 times, for mu in 0-6 respectively
 
 now make the plot showing the proportion of times the null was rejected on the y-axis and the true value of mu on the x-axis.
 describe the association between effect size and power
-```{r Power Results & Plot showing the mu-power relationship}
+```{r Power Results & Plot showing the mu-power relationship, message=FALSE, warning=FALSE}
 
   power_results = simulation_results %>% mutate(power = map_dbl(.x=data, ~ mean(.x$p.value < 0.05))) %>% select(mu, power)
   
@@ -64,6 +64,7 @@ describe the association between effect size and power
     scale_y_continuous(breaks = seq(0, 1, by = 0.05))
 
 ```
+
 #### Discussion on plot of true population mean against statistical power   
 - When μ=0, the power is close to 0.05, which matches the significance level (alpha) of 0.05. This is expected because when the null hypothesis is true, the probability of rejecting it (Type I error rate) is equal to the significance level.    
 - As μ moves further away from 0, the power increases steadily. This is because as the true mean μ diverges from the null hypothesis mean of 0, the effect size increases, making it easier for the test to detect a significant difference. Consequently, the likelihood of rejecting the null hypothesis rises.    
