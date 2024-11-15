@@ -9,8 +9,8 @@ editor_options:
 
   library(tidyverse)
   library(dplyr)
+  library(tidyr)
   library(ggplot2)
-  set.seed(1)
 
 ```
 
@@ -25,7 +25,6 @@ editor_options:
 
 ```
 
-sim_func is a Simulator Function that returns mu_hat and statistical significance level corresponds to each input sample:
 ```{r Create Simulator Function}
 
   sim_func = function(sample_size, population_mean, population_std) {
@@ -37,15 +36,12 @@ sim_func is a Simulator Function that returns mu_hat and statistical significanc
 
 ```
 
-now simulate 5000 times, for mu in 0-6 respectively
 ```{r Perform Simulation, cache=TRUE, message=FALSE, warning=FALSE}
 
-  simulation_results = tibble(mu = 0:6) %>% mutate(data = map(.x=mu, ~ rerun(5000, sim_func(sample_size=n, population_mean=.x, population_std=sigma)) %>% bind_rows()))
+  simulation_results =  tibble(mu = 0:6) %>% mutate(data = map(.x=mu, ~ rerun(5000, sim_func(sample_size=n, population_mean=.x, population_std=sigma)) %>% bind_rows()))
 
 ```
 
-now make the plot showing the proportion of times the null was rejected on the y-axis and the true value of mu on the x-axis.
-describe the association between effect size and power
 ```{r Power Results & Plot showing the mu-power relationship, message=FALSE, warning=FALSE}
 
   power_results = simulation_results %>% mutate(power = map_dbl(.x=data, ~ mean(.x$p.value < 0.05))) %>% select(mu, power)
@@ -72,5 +68,97 @@ describe the association between effect size and power
 - Conclusion: This plot correctly reflects the association between effect size (distance between the true μ and the null hypothesis mean) and power as it shows that 
 Small effect sizes result in low power whereas larger effect sizes result in higher power. This result confirms that the test is more powerful as the effect size increases,
 
+```{r}
 
-### Problem 3
+  average_mu_results =  simulation_results %>% 
+                        mutate( avg_mu_hat_all=map_dbl(.x=data, ~ mean(.x$mu_hat)), avg_mu_hat_rejected=map_dbl(data, ~ mean(.x$mu_hat[.x$p.value < 0.05])) ) %>%
+                        select( mu, avg_mu_hat_all, avg_mu_hat_rejected )
+  
+  ggplot(average_mu_results, aes(x = mu)) +
+    geom_line(aes(y = avg_mu_hat_all, color = "All Samples"), size = 0.35) +
+    geom_point(aes(y = avg_mu_hat_all, color = "All Samples"), size = 0.5) +
+    geom_line(aes(y = avg_mu_hat_rejected, color = "Rejected Samples"), size = 0.35) +
+    geom_point(aes(y = avg_mu_hat_rejected, color = "Rejected Samples"), size = 0.5) +
+    labs(
+      title = "Average Estimate of μ̂ vs True Value of μ",
+      x = "True Value of μ",
+      y = "Average Estimate of μ̂",
+      color = "Sample Type"
+    ) +
+    theme_light() +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_color_manual(values = c("All Samples" = "blue", "Rejected Samples" = "red")) +
+    scale_x_continuous(breaks = 0:6) +
+    scale_y_continuous(breaks = 0:6)
+
+```
+
+#### Discussion on plot of average mu_hat against true mu   
+- No, the sample average μ_hat across tests for which the null hypothesis is rejected is not approximately equal to the true value of μ, especially when μ is close to the null hypothesis value (0).
+- When μ is close to 0, only samples with sample means μ_hat that are far from 0 will produce a p-value below 0.05, leading to rejection of the null hypothesis. These extreme values inflate the average of μ_hat among the rejected samples.   
+- By focusing only on rejected tests, we are selecting samples that deviate more from the null hypothesis mean (0), resulting in a higher average μ_hat than if we included all samples. This selection bias skews the average upwards for the "Rejected Samples" group.
+
+### Problem 3   
+```{r Loading Dataset}
+
+  prob3 = read.csv("./homicide-data.csv") %>% mutate( city_state=paste(city, state, sep=", ") )
+  total_homicides_per_city=prob3 %>% group_by(city) %>% summarize(total_homicides=n(), unsolved_homicides=sum(disposition == "Closed without arrest" | disposition == "Open/No arrest"))
+
+```
+
+#### Description of Raw Data    
+- The data included information on a total of 52179 criminal homicides over the past decade in 50 of the largest cities within U.S. including the killing location, whether arrested, demographic details of each victim.   
+
+```{r Function for Prob3, message=FALSE, warning=FALSE}
+
+  prob3_func_1 = function(city_name){
+      particular_city = total_homicides_per_city %>% filter(city == city_name)
+      prop_test = prop.test(particular_city$unsolved_homicides, particular_city$total_homicides)
+      tidy_result = broom::tidy(prop_test)
+      df=data_frame(
+        point_estimate = tidy_result$estimate[[1]],
+        confidence_interval = paste("(", tidy_result$conf.low, ",", tidy_result$conf.high, ")")
+      )
+      return(df)
+  }
+
+  prob3_func_1("Baltimore")
+
+  prob3_func_2 <- function(data) {
+    data %>%
+      mutate(prop_test = map2(unsolved_homicides, total_homicides, ~ prop.test(.x, .y) %>% broom::tidy())) %>%
+      unnest(prop_test) %>%
+      select(city, proportion_unsolved = estimate, lower_bound = conf.low, upper_bound = conf.high) %>% 
+      mutate(confidence_interval = paste("(", lower_bound, ", ", upper_bound, ")"))
+  }
+  
+  city_results = prob3_func_2(total_homicides_per_city)
+  city_results %>% select(-lower_bound, -upper_bound)
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+  city_results <- city_results %>%
+    arrange(desc(proportion_unsolved)) %>%
+    mutate(city = factor(city, levels = city))
+  
+  ggplot(city_results, aes(x = city, y = proportion_unsolved)) +
+    geom_point(size = 0.35, color = "blue") +
+    geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.35, color = "red") +
+    labs(
+      title = "Proportion of Unsolved Homicides by City",
+      x = "City",
+      y = "Proportion of Unsolved Homicides"
+    ) +
+    theme_light() +
+    theme(
+      plot.title = element_text(size = 14, hjust = 0.5),
+      axis.title.x = element_text(size = 12),
+      axis.title.y = element_text(size = 12),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+      axis.text.y = element_text(size = 10)
+    )
+
+```
+
